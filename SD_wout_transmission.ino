@@ -25,8 +25,9 @@ const int HEADER = 0x59;
 // Setup
 void setup()
 {
-Serial.begin(9600);      
-myStepper.setSpeed(480);
+Serial.begin(9600); 
+Serial1.begin(115200);
+myStepper.setSpeed(300);
 pinMode(buttonPin, INPUT);
 pinMode(IN1, OUTPUT);
 pinMode(IN2, OUTPUT);
