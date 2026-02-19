@@ -15,13 +15,13 @@ int heightVal = 0;
 int motorTime = 0;
 int startButton = 0;
 int readiness = 0;
+int rot_degrees;
 float dist;                
 int strength;           
 int check;            
 int i;
 int uart[9];                 
 const int HEADER = 0x59;      
-const int stepsPerRevolution = 2048;
 
 // Setup
 
@@ -65,7 +65,7 @@ if (startButton == 1 && readiness == 1)
 {
 	// Time Calculation
 
-  motorTime = getMotorTime(heightVal);
+  motorTime = getMotorTime(dist);
 
   // Drop Sampler
 
@@ -98,11 +98,12 @@ if (startButton == 1 && readiness == 1)
 
 	if (samplesCollected < 8)
 		{
-      rot_degrees = 45;
+      rot_degrees = (100*stepsPerRevolution)/8;
+      
     }
 	else
 		{
-      rot_degrees = 22.5;
+      rot_degrees = (100*stepsPerRevolution)/16 ;
     }
 
   rotateStepper(rot_degrees);
