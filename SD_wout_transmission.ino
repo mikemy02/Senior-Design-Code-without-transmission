@@ -151,13 +151,8 @@ float measureHeight()
 
 int getMotorTime(float dist) 
 {
-switch (height) 
-  {
-  case 8: return 20000;
-  case 9: return 30000;
-  case 10: return 40000;
-  default: return 0;
- 	}
+return 5000;
+
 }
 
 void runMotorDown(int motorTime)
@@ -188,12 +183,12 @@ void rotateStepper(float rot_degrees)
 
 void distCheck(float dist, int readiness)
 {
-  if (dist < 8) 
+  if (dist < 50) 
   {
   Serial.println("Go Up"); 
   readiness = 0;
   } 
-  else if (dist > 10) 
+  else if (dist > 150) 
   {
   Serial.println("Go Down"); 
   readiness = 0;
