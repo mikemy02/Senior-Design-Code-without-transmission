@@ -1,5 +1,4 @@
 // Libraries + Config + Variables + Pins
-
 #include <Stepper.h>
 #include <SoftwareSerial.h> 
 
@@ -24,26 +23,19 @@ int uart[9];
 const int HEADER = 0x59;      
 
 // Setup
-
 void setup()
 {
 Serial.begin(9600);      
-
 myStepper.setSpeed(480);
-
 pinMode(buttonPin, INPUT);
 pinMode(IN1, OUTPUT);
 pinMode(IN2, OUTPUT);
-
 }
 
 // Main Loop
-
 void loop()
 {
-
 // check if full
-
 if (samplesCollected >= 8) 
   {
   Serial.println("Capacity full"); 
@@ -51,60 +43,48 @@ if (samplesCollected >= 8)
   }
 
 // measure height
-
 dist = measureHeight();
-
 distCheck(dist, readiness);
-
 startButton = digitalRead(buttonPin);
 
 // collect sample
-
 if (startButton == 1 && readiness == 1)
 {
-	// Time Calculation
-
+  // Time Calculation
   motorTime = getMotorTime(dist);
 
   // Drop Sampler
-
   runMotorDown(motorTime);
   delay(60000); // Hold for 60 seconds
 
   // Height Recheck
-
   readiness = 0;
-
   while (readiness == 0)
   {
-  dist = measureHeight();
-  distCheck(dist, readiness);
+  	dist = measureHeight();
+  	distCheck(dist, readiness);
   }
 
   motorTime = getMotorTime(dist);
 
   // Retrieve Sampler
-
   runMotorUp(motorTime);
 
   // Sample Logging
-
   samplesCollected++;
   Serial.print("Samples Collected: ");
   Serial.println(samplesCollected);
 
   // Sample check and instructions
-
 	if (samplesCollected < 8)
 		{
-      rot_degrees = (100*stepsPerRevolution)/8;
-      
-    }
+      rot_degrees = (100*stepsPerRevolution)/8; 
+   		}
 	else
 		{
       rot_degrees = (100*stepsPerRevolution)/16 ;
-    }
-
+    	}
+	
   rotateStepper(rot_degrees);
 		
   if (samplesCollected == 8) 
@@ -120,7 +100,6 @@ if (startButton == 1 && readiness == 1)
 }
 
 // Functions
-
 float measureHeight() 
 {
   if (Serial1.available())
@@ -152,7 +131,6 @@ float measureHeight()
 int getMotorTime(float dist) 
 {
 return 5000;
-
 }
 
 void runMotorDown(int motorTime)
@@ -167,7 +145,7 @@ void runMotorUp(int motorTime)
 {
 digitalWrite(IN1, HIGH);
 digitalWrite(IN2, HIGH);
-
+	
 while (digitalRead(limitSwitchPin) == HIGH)
 {
 	digitalWrite(IN2, LOW);
