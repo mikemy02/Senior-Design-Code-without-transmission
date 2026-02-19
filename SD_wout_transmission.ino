@@ -1,14 +1,18 @@
 // Libraries + Config + Variables + Pins
 #include <Stepper.h>
-#include <SoftwareSerial.h> 
+#include <SoftwareSerial.h>
 
-const int limitSwitchPin = 2;
-buttonPin = 1;
-const int DCIN1 = D2;
-const int DCIN2 = D3;
-SoftwareSerial Serial1(D10, D11);
+
+const int limitSwitchPin = 12;
+const int buttonPin = 9;
+const int DCIN1 = 2;
+const int DCIN2 = 3;
+SoftwareSerial Serial1(10, 11);
+
 
 const int stepsPerRevolution = 200;
+Stepper myStepper(stepsPerRevolution, 5, 6, 7,8);
+
 int samplesCollected = 0;
 int heightVal = 0;
 int motorTime = 0;
@@ -16,37 +20,42 @@ int startButton = 0;
 int readiness = 0;
 int rot_degrees;
 float dist;                
-int strength;           
+int strength;          
 int check;            
 int i;
-int uart[9];                 
+int uart[9];                
 const int HEADER = 0x59;      
+
 
 // Setup
 void setup()
 {
-Serial.begin(9600); 
+Serial.begin(9600);  
 Serial1.begin(115200);
 myStepper.setSpeed(300);
 pinMode(buttonPin, INPUT);
-pinMode(IN1, OUTPUT);
-pinMode(IN2, OUTPUT);
+pinMode(DCIN1, OUTPUT);
+pinMode(DCIN2, OUTPUT);
 }
+
 
 // Main Loop
 void loop()
 {
 // check if full
-if (samplesCollected >= 8) 
+if (samplesCollected >= 8)
   {
-  Serial.println("Capacity full"); 
+  Serial.println("Capacity full");
   return 0;
   }
 
+
 // measure height
 dist = measureHeight();
+Serial.println(dist);
 distCheck(dist, readiness);
 startButton = digitalRead(buttonPin);
+
 
 // collect sample
 if (startButton == 1 && readiness == 1)
@@ -54,54 +63,61 @@ if (startButton == 1 && readiness == 1)
   // Time Calculation
   motorTime = getMotorTime(dist);
 
+
   // Drop Sampler
   runMotorDown(motorTime);
   delay(60000); // Hold for 60 seconds
+
 
   // Height Recheck
   readiness = 0;
   while (readiness == 0)
   {
-  	dist = measureHeight();
-  	distCheck(dist, readiness);
+    dist = measureHeight();
+    distCheck(dist, readiness);
   }
+
 
   motorTime = getMotorTime(dist);
 
+
   // Retrieve Sampler
   runMotorUp(motorTime);
+
 
   // Sample Logging
   samplesCollected++;
   Serial.print("Samples Collected: ");
   Serial.println(samplesCollected);
 
+
   // Sample check and instructions
-	if (samplesCollected < 8)
-		{
-      rot_degrees = (100*stepsPerRevolution)/8; 
-   		}
-	else
-		{
-      rot_degrees = (100*stepsPerRevolution)/16 ;
-    	}
-	
-  rotateStepper(rot_degrees);
-		
-  if (samplesCollected == 8) 
+  if (samplesCollected < 8)
     {
-    Serial.println("Capacity full"); 
+      rot_degrees = (100*stepsPerRevolution)/8;
+      }
+  else
+    {
+      rot_degrees = (100*stepsPerRevolution)/16 ;
+      }
+ 
+  rotateStepper(rot_degrees);
+   
+  if (samplesCollected == 8)
+    {
+    Serial.println("Capacity full");
     return 0;
     }
-  else 
+  else
     {
-    Serial.println("Fly to next location"); 
+    Serial.println("Fly to next location");
     }
   }
 }
 
+
 // Functions
-float measureHeight() 
+float measureHeight()
 {
   if (Serial1.available())
   {
@@ -129,52 +145,60 @@ float measureHeight()
   return dist;
 }
 
-int getMotorTime(float dist) 
+
+int getMotorTime(float dist)
 {
 return 5000;
 }
 
+
 void runMotorDown(int motorTime)
 {
-digitalWrite(IN1, HIGH);
-digitalWrite(IN2, LOW);
+digitalWrite(DCIN1, HIGH);
+digitalWrite(DCIN2, LOW);
 delay(motorTime);
-digitalWrite(IN2, HIGH);
+digitalWrite(DCIN2, HIGH);
 }
+
 
 void runMotorUp(int motorTime)
 {
-digitalWrite(IN1, HIGH);
-digitalWrite(IN2, HIGH);
-	
+digitalWrite(DCIN1, HIGH);
+digitalWrite(DCIN2, HIGH);
+ 
 while (digitalRead(limitSwitchPin) == HIGH)
 {
-	digitalWrite(IN2, LOW);
-	}
-digitalWrite(IN2, HIGH); 
+  digitalWrite(DCIN2, LOW);
+  }
+digitalWrite(DCIN2, HIGH);
 }
 
-void rotateStepper(float rot_degrees) 
+
+void rotateStepper(float rot_degrees)
 {
  myStepper.step(stepsPerRevolution);
   Serial.println("Stepper rotated 45 degrees");
 }
 
+
 void distCheck(float dist, int readiness)
 {
-  if (dist < 50) 
+  if (dist < 50)
   {
-  Serial.println("Go Up"); 
+  //Serial.println("Go Up");
   readiness = 0;
-  } 
-  else if (dist > 150) 
+  }
+  else if (dist > 150)
   {
-  Serial.println("Go Down"); 
+  Serial.println("Go Down");
   readiness = 0;
-  } 
-  else 
+  }
+  else
   {
-  Serial.println("Ready to Collect"); 
+  Serial.println("Ready to Collect");
   readiness = 1;
   }
 }
+
+
+
