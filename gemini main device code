@@ -1,0 +1,175 @@
+#include <Stepper.h>
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <RH_RF95.h>
+#include <RHReliableDatagram.h>
+
+// Pins
+const int limitSwitchPin = 5;
+const int DCIN1 = A0, DCIN2 = A1;
+SoftwareSerial Serial1(9, 10); // Lidar
+Stepper myStepper(200, A2, A3, A4, A5);
+
+#define RFM95_CS 4
+#define RFM95_RST 2
+#define RFM95_INT 3
+#define MAIN_ADDR 1
+#define SECONDARY_ADDR 2
+
+float dist;                
+int strength;          
+int check;            
+int i;
+int uart[9];                
+const int HEADER = 0x59; 
+
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+RHReliableDatagram manager(rf95, MAIN_ADDR);
+
+// States
+enum State { IDLE, LOWERING, CHECK_DEPTH, RAISING, ROTATING, FULL };
+State currentState = IDLE;
+
+unsigned long stateTimer = 0;
+unsigned long lastTelemetry = 0;
+
+int samples = 0;
+uint32_t actionCounter = 0;
+uint8_t controllerAddr = 0;
+
+void setup() {
+  Serial.begin(9600);
+  Serial1.begin(115200);
+  myStepper.setSpeed(300);
+  pinMode(limitSwitchPin, INPUT);
+  pinMode(DCIN1, OUTPUT); pinMode(DCIN2, OUTPUT);
+  
+  // Reset Radio
+  pinMode(RFM95_RST, OUTPUT); digitalWrite(RFM95_RST, HIGH); delay(10);
+  digitalWrite(RFM95_RST, LOW); delay(10); digitalWrite(RFM95_RST, HIGH);
+  
+  if (!manager.init()) while(1);
+  rf95.setFrequency(915.0);
+  rf95.setTxPower(23, false);
+}
+
+void loop() {
+  dist = measureHeight();
+
+  // Send Depth every 1 second
+  if (millis() - lastTelemetry > 500) {
+    sendDepth(dist);
+    lastTelemetry = millis();
+  }
+
+  // Check for Trigger
+  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+  uint8_t len = sizeof(buf);
+  uint8_t from;
+  if (manager.recvfromAckTimeout(buf, &len, 10, &from)) {
+    if (len >= 1 && buf[0] == 'T' && currentState == IDLE) {
+      if (dist >= 50 && dist <= 150) {
+        actionCounter++;
+        controllerAddr = from;
+        currentState = LOWERING;
+        stateTimer = millis();
+      }
+    }
+  }
+
+  runSequence();
+}
+
+void runSequence() {
+  switch (currentState) {
+    case LOWERING:
+      digitalWrite(DCIN1, HIGH); digitalWrite(DCIN2, LOW);
+      if (millis() - stateTimer > 5000) { // 5s drop
+        digitalWrite(DCIN1, HIGH); digitalWrite(DCIN2, HIGH); // Stop
+        currentState = CHECK_DEPTH;
+      }
+      break;
+
+    case CHECK_DEPTH:
+      // Stay here until depth is in range
+      if (dist >= 50 && dist <= 150) currentState = RAISING;
+      break;
+
+    case RAISING:
+      if (digitalRead(limitSwitchPin) == LOW) {
+        digitalWrite(DCIN1, LOW); digitalWrite(DCIN2, HIGH);
+      } else {
+        digitalWrite(DCIN1, HIGH); digitalWrite(DCIN2, HIGH); // Stop
+        currentState = ROTATING;
+      }
+      break;
+
+    case ROTATING:
+      int steps = (samples < 8) ? (20000/8) : (20000/16);
+      myStepper.step(steps);
+      stopStepper();
+      samples++;
+      
+      // *** THE FIX: Send DONE only after all physical work is finished ***
+      sendDone();
+      
+      if (samples >= 8) currentState = FULL;
+      else currentState = IDLE;
+      break;
+
+    case FULL:
+      Serial.println("Storage Full");
+      break;
+  }
+}
+
+// Helpers
+void stopStepper() {
+  digitalWrite(A2, LOW); digitalWrite(A3, LOW); 
+  digitalWrite(A4, LOW); digitalWrite(A5, LOW);
+}
+
+void sendDone() {
+  uint8_t pkt[1 + sizeof(uint32_t)];
+  pkt[0] = 'K';
+  memcpy(&pkt[1], &actionCounter, sizeof(uint32_t));
+  manager.sendtoWait(pkt, sizeof(pkt), controllerAddr);
+}
+
+void sendDepth(float d) {
+  uint8_t pkt[1 + sizeof(float)];
+  pkt[0] = 'D';
+  memcpy(&pkt[1], &d, sizeof(float));
+  static uint8_t seq = 0;
+  manager.setHeaderId(++seq);
+  manager.sendto(pkt, sizeof(pkt), SECONDARY_ADDR);
+}
+
+float measureHeight()
+{
+  if (Serial1.available())
+  {
+    if (Serial1.read() == HEADER)
+    {
+      uart[0] = HEADER;
+      if (Serial1.read() == HEADER)
+      {
+        uart[1] = HEADER;
+        for (i = 2; i < 9; i++)
+        {
+          uart[i] = Serial1.read();
+        }
+        check = uart[0] + uart[1] + uart[2] + uart[3] + uart[4] + uart[5] + uart[6] + uart[7];
+        if (uart[8] == (check & 0xff))
+        {
+          dist = uart[2] + uart[3] * 256;
+          Serial.print("dist = ");
+          Serial.print(dist);
+          Serial.print('\n');
+        }
+      }
+    }
+  }
+  return dist;
+}
+
