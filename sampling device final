@@ -1,0 +1,298 @@
+// Libraries + Config + Variables + Pins
+#include <Stepper.h>
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <RH_RF95.h>
+#include <RHReliableDatagram.h>
+
+const int limitSwitchPin = 4;
+const int buttonPin = 9;
+const int DCIN1 = A0;
+const int DCIN2 = A1;
+SoftwareSerial Serial1(10, 11);
+#define RFM95_CS   4
+#define RFM95_RST  2
+#define RFM95_INT  3
+
+const int stepsPerRevolution = 200;
+Stepper myStepper(stepsPerRevolution, A2, A3, A4, A5);
+
+int samplesCollected = 0;
+int heightVal = 0;
+int motorTime = 0;
+int startButton = 0;
+int readiness = 0;
+int rot_degrees;
+float dist;                
+int strength;          
+int check;            
+int i;
+int uart[9];                
+const int HEADER = 0x59;   
+   
+// ---------- Radio ----------
+#define RF95_FREQ 915.0
+
+// ---------- Addresses ----------
+#define MAIN_ADDR      1
+#define SECONDARY_ADDR 2
+
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+RHReliableDatagram manager(rf95, MAIN_ADDR);
+
+// ---------- Timing ----------
+const unsigned long DEPTH_PERIOD_MS = 1000;  // 1 Hz
+unsigned long lastDepthSend = 0;
+
+// ---------- "Action" ----------
+volatile uint32_t actionCounter = 0;
+
+void hardResetRadio() {
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+}
+
+
+// Setup
+void setup()
+{
+Serial.begin(9600);  
+Serial1.begin(115200);
+myStepper.setSpeed(300);
+pinMode(limitSwitchPin, INPUT);
+pinMode(buttonPin, INPUT);
+pinMode(DCIN1, OUTPUT);
+pinMode(DCIN2, OUTPUT);
+
+delay(1200);
+  Serial.println("MAIN boot");
+
+  hardResetRadio();
+
+  if (!manager.init()) {
+    Serial.println("LoRa init failed");
+    while (1);
+  }
+  if (!rf95.setFrequency(RF95_FREQ)) {
+    Serial.println("setFrequency failed");
+    while (1);
+  }
+  rf95.setTxPower(23, false);
+
+  Serial.println("MAIN ready");
+}
+
+
+// Main Loop
+void loop()
+{
+
+// measure height
+dist = measureHeight();
+
+  unsigned long now = millis();
+  if (now - lastDepthSend >= DEPTH_PERIOD_MS) {
+    lastDepthSend = now;
+    sendDepth();
+  }
+
+readiness = distCheck(dist, readiness);
+startButton = digitalRead(buttonPin);
+
+  // B) check for incoming commands (short timeout so we don’t stall streaming)
+  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+  uint8_t len = sizeof(buf);
+  uint8_t from;
+
+  if (manager.recvfromAckTimeout(buf, &len, 10, &from)) {
+    if (len >= 1 && (char)buf[0] == 'T') {
+      handleTriggerAndReply(from);
+    }
+  }
+
+// collect sample
+if (startButton == 1 && readiness == 1)
+{
+  // Time Calculation
+  motorTime = getMotorTime(dist);
+
+
+  // Drop Sampler
+  runMotorDown(motorTime);
+  //delay(60000); // Hold for 60 seconds
+
+
+  // Height Recheck
+  readiness = 0;
+  while (readiness == 0)
+  {
+    manager.recvfromAckTimeout(buf, &len, 1, &from);
+    dist = measureHeight();
+    readiness = distCheck(dist, readiness);
+    startButton = digitalRead(buttonPin);
+
+      unsigned long now = millis();
+      if (now - lastDepthSend >= DEPTH_PERIOD_MS) {
+      lastDepthSend = now;
+      sendDepth();
+  }
+  }
+
+  motorTime = getMotorTime(dist);
+
+
+  // Retrieve Sampler
+  runMotorUp(motorTime);
+
+
+  // Sample Logging
+  samplesCollected++;
+  Serial.print("Samples Collected: ");
+  Serial.println(samplesCollected);
+
+
+  // Sample check and instructions
+  if (samplesCollected < 8)
+    {
+      rot_degrees = (100*stepsPerRevolution)/8;
+      }
+  else
+    {
+      rot_degrees = (100*stepsPerRevolution)/16 ;
+      }
+ 
+  rotateStepper(rot_degrees);
+   
+  if (samplesCollected == 8)
+    {
+    Serial.println("Capacity full");
+    return 0;
+    }
+  else
+    {
+    Serial.println("Fly to next location");
+    }
+  }
+}
+
+
+// Functions
+float measureHeight()
+{
+  if (Serial1.available())
+  {
+    if (Serial1.read() == HEADER)
+    {
+      uart[0] = HEADER;
+      if (Serial1.read() == HEADER)
+      {
+        uart[1] = HEADER;
+        for (i = 2; i < 9; i++)
+        {
+          uart[i] = Serial1.read();
+        }
+        check = uart[0] + uart[1] + uart[2] + uart[3] + uart[4] + uart[5] + uart[6] + uart[7];
+        if (uart[8] == (check & 0xff))
+        {
+          dist = uart[2] + uart[3] * 256;
+          Serial.print("dist = ");
+          Serial.print(dist);
+          Serial.print('\n');
+        }
+      }
+    }
+  }
+  return dist;
+}
+
+int getMotorTime(float dist)
+{
+return 5000;
+}
+
+void runMotorDown(int motorTime)
+{
+digitalWrite(DCIN1, HIGH);
+digitalWrite(DCIN2, LOW);
+delay(motorTime);
+digitalWrite(DCIN2, HIGH);
+}
+
+
+void runMotorUp(int motorTime)
+{
+digitalWrite(DCIN1, HIGH);
+digitalWrite(DCIN2, HIGH);
+ 
+while (digitalRead(limitSwitchPin) == 0)
+{
+  digitalWrite(DCIN1, LOW);
+  }
+digitalWrite(DCIN1, HIGH);
+}
+
+
+void rotateStepper(float rot_degrees)
+{
+ myStepper.step(rot_degrees);
+}
+
+
+int distCheck(float dist, int readiness)
+{
+  if (dist < 50)
+  {
+  Serial.println("Go Up");
+  readiness = 0;
+  }
+  else if (dist > 150)
+  {
+  Serial.println("Go Down");
+  readiness = 0;
+  }
+  else
+  {
+  Serial.println("Ready to Collect");
+  readiness = 1;
+  }
+  return readiness;
+}
+
+void sendDepth(float dist) {
+  uint8_t pkt[1 + sizeof(float)];
+  pkt[0] = 'D';
+  memcpy(&pkt[1], &dist, sizeof(float));
+
+  // 1) Manually increment the header ID so the receiver doesn't drop it as a duplicate
+  static uint8_t unreliableSeq = 0;
+  manager.setHeaderId(++unreliableSeq);
+
+  // 2) Unreliable stream
+  manager.sendto(pkt, sizeof(pkt), SECONDARY_ADDR);
+  
+  // 3) Wait for the transmission to physically finish!
+  rf95.waitPacketSent(); 
+}
+
+void handleTriggerAndReply(uint8_t from) {
+  // 1) local action
+  Serial.println("triggered");
+  actionCounter++;
+  Serial.print("actionCounter = ");
+  Serial.println(actionCounter);
+
+  // 2) send DONE back reliably
+  uint8_t donePkt[1 + sizeof(uint32_t)];
+  donePkt[0] = 'K'; // done
+  memcpy(&donePkt[1], &actionCounter, sizeof(uint32_t));
+
+  bool ok = manager.sendtoWait(donePkt, sizeof(donePkt), from);
+  if (!ok) {
+    Serial.println("Failed to send DONE (no ACK)");
+  }
+}
