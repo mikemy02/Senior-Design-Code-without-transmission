@@ -2,14 +2,16 @@
 #include <Stepper.h>
 #include <SoftwareSerial.h>
 
+
 const int limitSwitchPin = 4;
 const int buttonPin = 9;
-const int DCIN1 = 2;
-const int DCIN2 = 3;
+const int DCIN1 = A0;
+const int DCIN2 = A1;
 SoftwareSerial Serial1(10, 11);
 
+
 const int stepsPerRevolution = 200;
-Stepper myStepper(stepsPerRevolution, 5, 6, 7,8);
+Stepper myStepper(stepsPerRevolution, A2, A3, A4, A5);
 
 int samplesCollected = 0;
 int heightVal = 0;
@@ -24,6 +26,7 @@ int i;
 int uart[9];                
 const int HEADER = 0x59;      
 
+
 // Setup
 void setup()
 {
@@ -36,6 +39,7 @@ pinMode(DCIN1, OUTPUT);
 pinMode(DCIN2, OUTPUT);
 }
 
+
 // Main Loop
 void loop()
 {
@@ -45,6 +49,7 @@ if (samplesCollected >= 8)
   Serial.println("Capacity full");
   return 0;
   }
+
 
 // measure height
 dist = measureHeight();
@@ -57,9 +62,11 @@ if (startButton == 1 && readiness == 1)
   // Time Calculation
   motorTime = getMotorTime(dist);
 
+
   // Drop Sampler
   runMotorDown(motorTime);
   delay(motorTime); // Hold for 60 seconds
+
 
   // Height Recheck
   readiness = 0;
@@ -72,13 +79,16 @@ if (startButton == 1 && readiness == 1)
 
   motorTime = getMotorTime(dist);
 
+
   // Retrieve Sampler
   runMotorUp(motorTime);
+
 
   // Sample Logging
   samplesCollected++;
   Serial.print("Samples Collected: ");
   Serial.println(samplesCollected);
+
 
   // Sample check and instructions
   if (samplesCollected < 8)
@@ -103,6 +113,7 @@ if (startButton == 1 && readiness == 1)
     }
   }
 }
+
 
 // Functions
 float measureHeight()
@@ -133,10 +144,12 @@ float measureHeight()
   return dist;
 }
 
+
 int getMotorTime(float dist)
 {
 return 5000;
 }
+
 
 void runMotorDown(int motorTime)
 {
@@ -145,6 +158,7 @@ digitalWrite(DCIN2, LOW);
 delay(motorTime);
 digitalWrite(DCIN2, HIGH);
 }
+
 
 void runMotorUp(int motorTime)
 {
@@ -158,10 +172,12 @@ while (digitalRead(limitSwitchPin) == 0)
 digitalWrite(DCIN1, HIGH);
 }
 
+
 void rotateStepper(float rot_degrees)
 {
  myStepper.step(rot_degrees);
 }
+
 
 int distCheck(float dist, int readiness)
 {
