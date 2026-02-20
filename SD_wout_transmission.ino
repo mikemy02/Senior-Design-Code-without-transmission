@@ -3,7 +3,7 @@
 #include <SoftwareSerial.h>
 
 
-const int limitSwitchPin = 12;
+const int limitSwitchPin = 4;
 const int buttonPin = 9;
 const int DCIN1 = 2;
 const int DCIN2 = 3;
@@ -33,6 +33,7 @@ void setup()
 Serial.begin(9600);  
 Serial1.begin(115200);
 myStepper.setSpeed(300);
+pinMode(limitSwitchPin, INPUT);
 pinMode(buttonPin, INPUT);
 pinMode(DCIN1, OUTPUT);
 pinMode(DCIN2, OUTPUT);
@@ -52,10 +53,8 @@ if (samplesCollected >= 8)
 
 // measure height
 dist = measureHeight();
-Serial.println(dist);
-distCheck(dist, readiness);
+readiness = distCheck(dist, readiness);
 startButton = digitalRead(buttonPin);
-
 
 // collect sample
 if (startButton == 1 && readiness == 1)
@@ -66,7 +65,7 @@ if (startButton == 1 && readiness == 1)
 
   // Drop Sampler
   runMotorDown(motorTime);
-  delay(60000); // Hold for 60 seconds
+  delay(motorTime); // Hold for 60 seconds
 
 
   // Height Recheck
@@ -74,9 +73,9 @@ if (startButton == 1 && readiness == 1)
   while (readiness == 0)
   {
     dist = measureHeight();
-    distCheck(dist, readiness);
+    readiness = distCheck(dist, readiness);
+    startButton = digitalRead(buttonPin);
   }
-
 
   motorTime = getMotorTime(dist);
 
@@ -166,26 +165,25 @@ void runMotorUp(int motorTime)
 digitalWrite(DCIN1, HIGH);
 digitalWrite(DCIN2, HIGH);
  
-while (digitalRead(limitSwitchPin) == HIGH)
+while (digitalRead(limitSwitchPin) == 0)
 {
-  digitalWrite(DCIN2, LOW);
+  digitalWrite(DCIN1, LOW);
   }
-digitalWrite(DCIN2, HIGH);
+digitalWrite(DCIN1, HIGH);
 }
 
 
 void rotateStepper(float rot_degrees)
 {
- myStepper.step(stepsPerRevolution);
-  Serial.println("Stepper rotated 45 degrees");
+ myStepper.step(rot_degrees);
 }
 
 
-void distCheck(float dist, int readiness)
+int distCheck(float dist, int readiness)
 {
   if (dist < 50)
   {
-  //Serial.println("Go Up");
+  Serial.println("Go Up");
   readiness = 0;
   }
   else if (dist > 150)
@@ -198,7 +196,5 @@ void distCheck(float dist, int readiness)
   Serial.println("Ready to Collect");
   readiness = 1;
   }
+  return readiness;
 }
-
-
-
