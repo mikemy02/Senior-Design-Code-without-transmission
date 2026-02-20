@@ -1,0 +1,132 @@
+#include <SPI.h>
+#include <RH_RF95.h>
+#include <RHReliableDatagram.h>
+
+// ---------- Pins ----------
+#define RFM95_CS   4
+#define RFM95_RST  2
+#define RFM95_INT  3
+
+// ---------- Radio ----------
+#define RF95_FREQ 915.0
+
+// ---------- Addresses ----------
+#define MAIN_ADDR      1
+#define SECONDARY_ADDR 2
+
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+RHReliableDatagram manager(rf95, SECONDARY_ADDR);
+
+bool waitingForDone = false;
+unsigned long triggerSentAt = 0;
+const unsigned long DONE_TIMEOUT_MS = 3000;  // how long to wait for DONE
+
+void hardResetRadio() {
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+}
+
+void setup() {
+  Serial.begin(9600);
+  delay(1200);
+  Serial.println("SECONDARY boot");
+
+  hardResetRadio();
+
+  if (!manager.init()) {
+    Serial.println("LoRa init failed");
+    while (1);
+  }
+  if (!rf95.setFrequency(RF95_FREQ)) {
+    Serial.println("setFrequency failed");
+    while (1);
+  }
+  rf95.setTxPower(23, false);
+
+  Serial.println("SECONDARY ready. Type 't' to trigger.");
+}
+
+void sendTrigger() {
+  uint8_t trig[1] = {'T'};
+
+  Serial.println("Sending trigger...");
+  bool ok = manager.sendtoWait(trig, sizeof(trig), MAIN_ADDR);
+
+  if (ok) {
+    Serial.println("Trigger delivered, waiting for DONE...");
+    waitingForDone = true;
+    triggerSentAt = millis();
+  } else {
+    Serial.println("Trigger FAILED (no ACK from main)");
+    waitingForDone = false;
+  }
+}
+
+void handleIncoming() {
+  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+  uint8_t len = sizeof(buf);
+  uint8_t from;
+
+  // short timeout keeps loop responsive
+  if (manager.recvfromAckTimeout(buf, &len, 50, &from)) {
+    
+    if (len < 1) return;
+
+    char type = (char)buf[0];
+
+    if (type == 'D') {
+      if (len >= 1 + sizeof(float)) {
+        float depth;
+        memcpy(&depth, &buf[1], sizeof(float));
+
+        // Optional: don’t spam too hard—print occasionally if you want
+        Serial.print("Depth: ");
+        Serial.print(depth, 3);
+        Serial.print(" m (RSSI ");
+        Serial.print(rf95.lastRssi());
+        Serial.println(" dBm)");
+      }
+    }
+    else if (type == 'K') { // DONE
+      if (waitingForDone) {
+        uint32_t counter = 0;
+        if (len >= 1 + sizeof(uint32_t)) {
+          memcpy(&counter, &buf[1], sizeof(uint32_t));
+        }
+
+        Serial.print("success");
+        Serial.print(" (actionCounter=");
+        Serial.print(counter);
+        Serial.println(")");
+        waitingForDone = false;
+      } else {
+        // DONE arrived unexpectedly (could happen if you reboot mid-protocol)
+        Serial.println("Got DONE but wasn’t waiting.");
+      }
+    }
+  }
+}
+
+void loop() {
+  // 1) Read operator input on SECONDARY
+  if (Serial.available()) {
+    char c = (char)Serial.read();
+    if ((c == 't' || c == 'T') && !waitingForDone) {
+      sendTrigger();
+    }
+  }
+
+  // 2) Process incoming depth + DONE
+  handleIncoming();
+
+  // 3) Timeout if DONE never arrives
+  if (waitingForDone && (millis() - triggerSentAt > DONE_TIMEOUT_MS)) {
+    Serial.println("Timed out waiting for DONE.");
+    waitingForDone = false;
+  }
+}
