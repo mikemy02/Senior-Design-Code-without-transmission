@@ -5,11 +5,10 @@
 #include <RH_RF95.h>
 #include <RHReliableDatagram.h>
 
-const int limitSwitchPin = 4;
-const int buttonPin = 9;
+const int limitSwitchPin = 5;
 const int DCIN1 = A0;
 const int DCIN2 = A1;
-SoftwareSerial Serial1(10, 11);
+SoftwareSerial Serial1(9, 10);
 #define RFM95_CS   4
 #define RFM95_RST  2
 #define RFM95_INT  3
@@ -65,7 +64,6 @@ Serial.begin(9600);
 Serial1.begin(115200);
 myStepper.setSpeed(300);
 pinMode(limitSwitchPin, INPUT);
-pinMode(buttonPin, INPUT);
 pinMode(DCIN1, OUTPUT);
 pinMode(DCIN2, OUTPUT);
 
@@ -98,11 +96,10 @@ dist = measureHeight();
   unsigned long now = millis();
   if (now - lastDepthSend >= DEPTH_PERIOD_MS) {
     lastDepthSend = now;
-    sendDepth();
+    sendDepth(dist);
   }
 
 readiness = distCheck(dist, readiness);
-startButton = digitalRead(buttonPin);
 
   // B) check for incoming commands (short timeout so we don’t stall streaming)
   uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -112,6 +109,7 @@ startButton = digitalRead(buttonPin);
   if (manager.recvfromAckTimeout(buf, &len, 10, &from)) {
     if (len >= 1 && (char)buf[0] == 'T') {
       handleTriggerAndReply(from);
+      startButton = 1;
     }
   }
 
@@ -134,12 +132,11 @@ if (startButton == 1 && readiness == 1)
     manager.recvfromAckTimeout(buf, &len, 1, &from);
     dist = measureHeight();
     readiness = distCheck(dist, readiness);
-    startButton = digitalRead(buttonPin);
 
       unsigned long now = millis();
       if (now - lastDepthSend >= DEPTH_PERIOD_MS) {
       lastDepthSend = now;
-      sendDepth();
+      sendDepth(dist);
   }
   }
 
@@ -154,6 +151,9 @@ if (startButton == 1 && readiness == 1)
   samplesCollected++;
   Serial.print("Samples Collected: ");
   Serial.println(samplesCollected);
+  startButton = 0;
+  readiness = 0;
+
 
 
   // Sample check and instructions
