@@ -119,7 +119,7 @@ if (startButton == 1 && readiness == 1)
 {
   // Time Calculation
   motorTime = getMotorTime(dist);
-
+  dist = 0;
 
   // Drop Sampler
   runMotorDown(motorTime);
