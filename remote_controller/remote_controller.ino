@@ -325,7 +325,7 @@ void sendTrigger() {
 
   if (ok) {
     Serial.println(F("Trigger delivered, waiting for DONE..."));
-    OLED_ShowString(5, 9, "     Triggered        ");
+    OLED_ShowString(5, 9, "      Triggered         ");
     waitingForDone = true;
     triggerSentAt = millis();
   } else {
@@ -448,6 +448,7 @@ void loop() {
     OLED_ShowString(0, 0, "Samples Collected:");
     OLED_ShowNum(0, 110, samplesCollected);
     lastDisplayed = samplesCollected;
+    OLED_ShowString(5, 9, "Ready for reTriggering");
   }
 
   if (waitingForDone && (millis() - triggerSentAt > DONE_TIMEOUT_MS)) {
