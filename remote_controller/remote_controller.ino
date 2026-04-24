@@ -2,37 +2,32 @@
 #include <RH_RF95.h>
 #include <RHReliableDatagram.h>
 
-
 // ---------- Pins ----------
 #define RFM95_CS   4
 #define RFM95_RST  2
 #define RFM95_INT  3
 
-
 // ---------- Radio ----------
 #define RF95_FREQ 915.0
-
 
 // ---------- Addresses ----------
 #define MAIN_ADDR      1
 #define SECONDARY_ADDR 2
 
-
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 RHReliableDatagram manager(rf95, SECONDARY_ADDR);
 
-
 bool waitingForDone = false;
 unsigned long triggerSentAt = 0;
-const unsigned long DONE_TIMEOUT_MS = 3000;  // how long to wait for DONE
+const unsigned long DONE_TIMEOUT_MS = 30000;  // how long to wait for DONE
 int samplesCollected = 0;
 int SC = 0;
-#define START_BUTTON 7
+int startButton = 7;
+int state = 0;
 bool lastButtonState = HIGH;
-bool buttonPressed = false;
+bool stableButtonState = HIGH;
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50;
-
 
 // Screen Code
 const unsigned char *point;
@@ -69,7 +64,6 @@ const unsigned char OLED_init_cmd[25]=
 0xA6,// Set display mode; bit0: 1, inverse display; 0, normal display
 0xAF,// Turn on display
 };
-
 
 // Standard 5x8 pixel ASCII Font (Characters ' ' through '~')
 const unsigned char font5x8[96][5] = {
@@ -126,27 +120,20 @@ void IIC_write(unsigned char date)
   digitalWrite(5,HIGH);
   // Do not perform ACK detection
   digitalWrite(5,LOW);
-  
-
 }
-// Start signal
-// A change in the state of SDA from HIGH to LOW while SCL is HIGH defines a START condition.
+
 void IIC_start()
 {
   digitalWrite(6,HIGH);
   
   digitalWrite(5,HIGH);
-             // Release SCL after all operations are completed  
   digitalWrite(6,LOW);
   
   digitalWrite(5,LOW);
   
-        IIC_write(0x78);
-        
+  IIC_write(0x78);
 }
 
-// Stop signal
-// A change in the state of SDA from LOW to HIGH while SCL is HIGH defines a STOP condition.
 void IIC_stop()
 {
   digitalWrite(6,LOW);
@@ -154,61 +141,63 @@ void IIC_stop()
   digitalWrite(5,HIGH);
   
   digitalWrite(6,HIGH);
-  
 }
 
 void OLED_send_cmd(unsigned char o_command)
-  {
-    
-    IIC_start();
-    IIC_write(0x00); 
-    IIC_write(o_command);
-    IIC_stop();
-    
-  }
+{
+  IIC_start();
+  IIC_write(0x00); 
+  IIC_write(o_command);
+  IIC_stop();
+}
+
 void OLED_send_data(unsigned char o_data)
-  { 
-    IIC_start();
-    IIC_write(0x40);
-    IIC_write(o_data);
-    IIC_stop();
-   }
+{ 
+  IIC_start();
+  IIC_write(0x40);
+  IIC_write(o_data);
+  IIC_stop();
+}
+
 void Column_set(unsigned char column)
 {
-OLED_send_cmd(0x10|(column>>4));// Set higher column address
-OLED_send_cmd(0x00|(column&0x0f));// Set lower column address
-
+  OLED_send_cmd(0x10|(column>>4));
+  OLED_send_cmd(0x00|(column&0x0f));
 }
+
 void Page_set(unsigned char page)
 {
-OLED_send_cmd(0xb0+page);
+  OLED_send_cmd(0xb0+page);
 }
-void OLED_clear(void )
+
+void OLED_clear(void)
 {
-unsigned char page,column;
-for(page=0;page<8;page++)//pageloop
+  unsigned char page,column;
+  for(page=0;page<8;page++)
+  {
+    Page_set(page);
+    Column_set(0);
+    for(column=0;column<128;column++)
+    {
+      OLED_send_data(0x00);
+    }
+  }
+}
+
+void OLED_full(void)
 {
-Page_set(page);
-Column_set(0);
-for(column=0;column<128;column++)//columnloop
-{
-OLED_send_data(0x00);
+  unsigned char page,column;
+  for(page=0;page<8;page++)
+  {
+    Page_set(page);
+    Column_set(0);
+    for(column=0;column<128;column++)
+    {
+      OLED_send_data(0xff);
+    }
+  }
 }
-}
-}
-void OLED_full(void )
-{
-unsigned char page,column;
-for(page=0;page<8;page++)//pageloop
-{
-Page_set(page);
-Column_set(0);
-for(column=0;column<128;column++)//columnloop
-{
-OLED_send_data(0xff);
-}
-}
-}
+
 void OLED_init(void)
 {
   for (unsigned char i = 0; i < sizeof(OLED_init_cmd); i++)
@@ -219,71 +208,69 @@ void OLED_init(void)
 
 void Picture_display(const unsigned char *ptr_pic)
 {
-unsigned char page,column;
-for(page=0;page<(64/8);page++)//pageloop
-{
-Page_set(page);
-Column_set(0);
-for(column=0;column<128;column++)//columnloop
-{
-OLED_send_data(*ptr_pic++);
-}
-}
-}
-void Picture_ReverseDisplay(const unsigned char *ptr_pic)
-{
-unsigned char page,column,data;
-for(page=0;page<(64/8);page++)//pageloop
-{
-Page_set(page);
-Column_set(0);
-for(column=0;column<128;column++)//columnloop
-{
-data=*ptr_pic++;
-data=~data;
-OLED_send_data(data);
-}
-}
-}
-void  IO_init(void )
-{
-pinMode(5,OUTPUT);// Set digital pin as output
-pinMode(6,OUTPUT);// Set digital pin as output
+  unsigned char page,column;
+  for(page=0;page<(64/8);page++)
+  {
+    Page_set(page);
+    Column_set(0);
+    for(column=0;column<128;column++)
+    {
+      OLED_send_data(*ptr_pic++);
+    }
+  }
 }
 
-// Displays a single character at a specific page (row) and column (x-axis)
+void Picture_ReverseDisplay(const unsigned char *ptr_pic)
+{
+  unsigned char page,column,data;
+  for(page=0;page<(64/8);page++)
+  {
+    Page_set(page);
+    Column_set(0);
+    for(column=0;column<128;column++)
+    {
+      data=*ptr_pic++;
+      data=~data;
+      OLED_send_data(data);
+    }
+  }
+}
+
+void IO_init(void)
+{
+  pinMode(5,OUTPUT);
+  pinMode(6,OUTPUT);
+}
+
 void OLED_ShowChar(unsigned char page, unsigned char column, char ch) {
-  unsigned char c = ch - ' '; // Subtract space to match array index (Space is index 0)
+  unsigned char c = ch - ' ';
   
   Page_set(page);
   Column_set(column);
   
   for(unsigned char i = 0; i < 5; i++) {
-    OLED_send_data(font5x8[c][i]); // Send the 5 columns of pixels for this character
+    OLED_send_data(font5x8[c][i]);
   }
-  OLED_send_data(0x00); // Add 1 blank pixel column for spacing between letters
+  OLED_send_data(0x00);
 }
 
-// Displays a full string of text
 void OLED_ShowString(unsigned char page, unsigned char column, const char *str) {
-  while(*str != '\0') { // Loop until the end of the text string
+  while(*str != '\0') {
     OLED_ShowChar(page, column, *str);
-    column += 6; // Move cursor right by 6 pixels (5 for char + 1 for space)
+    column += 6;
     
-    // Simple word wrap (if text hits the edge of the 128px screen)
     if(column > 122) { 
       column = 0;
-      page += 1; // Move down one row
+      page += 1;
     }
-    str++; // Move to the next character in the text
+    str++;
   }
 }
 
-// NEW FUNCTION: Converts a variable number to text and displays it
 void OLED_ShowNum(unsigned char page, unsigned char column, int num) {
-  char buffer[10]; // Create a temporary buffer to hold the converted text
-  itoa(num, buffer, 10); // Convert integer 'num' to string 'buffer' in base 10 (decimal)
-  OLED_ShowString(page, column, buffer); // Send the converted string to your screen
+  char buffer[10];
+  itoa(num, buffer, 10);
+  OLED_ShowString(page, column, buffer);
 }
 
 void hardResetRadio() {
@@ -296,27 +283,27 @@ void hardResetRadio() {
   delay(10);
 }
 
-
 void setup() {
   Serial.begin(9600);
- pinMode(START_BUTTON, INPUT_PULLUP);
-  delay(1200);
-  Serial.println("SECONDARY boot");
+  pinMode(startButton, INPUT_PULLUP);
 
+  lastButtonState = digitalRead(startButton);
+  stableButtonState = lastButtonState;
+
+  delay(1200);
+  Serial.println(F("SECONDARY boot"));
 
   hardResetRadio();
 
-
   if (!manager.init()) {
-    Serial.println("LoRa init failed");
+    Serial.println(F("LoRa init failed"));
     while (1);
   }
   if (!rf95.setFrequency(RF95_FREQ)) {
-    Serial.println("setFrequency failed");
+    Serial.println(F("setFrequency failed"));
     while (1);
   }
   rf95.setTxPower(23, false);
-
 
   IO_init();
   OLED_init();
@@ -324,145 +311,150 @@ void setup() {
   delay(500);
   OLED_clear();
   
-  Serial.println("SECONDARY ready. Push Button for Triggering.");
-  OLED_ShowString(5, 8, "Push Button to Start");
+  Serial.println(F("SECONDARY ready. Push Button for Triggering."));
+  OLED_ShowString(5, 8, "    Push to Start");
 }
-
 
 void sendTrigger() {
   uint8_t trig[1] = {'T'};
 
+  Serial.println(F("Sending trigger..."));
+  OLED_ShowString(5, 9, "     Triggering     ");
 
-  Serial.println("Sending trigger...");
-  OLED_ShowString(5, 9, "    Triggering    ");
   bool ok = manager.sendtoWait(trig, sizeof(trig), MAIN_ADDR);
 
-
   if (ok) {
-    Serial.println("Trigger delivered, waiting for DONE...");
+    Serial.println(F("Trigger delivered, waiting for DONE..."));
     OLED_ShowString(5, 9, "     Triggered        ");
     waitingForDone = true;
     triggerSentAt = millis();
   } else {
-    Serial.println("Trigger FAILED (no ACK from main)");
+    Serial.println(F("Trigger FAILED (no ACK from main)"));
     waitingForDone = false;
   }
+
+  Serial.print(F("After sendTrigger, waitingForDone = "));
+  Serial.println(waitingForDone);
 }
 
-
-void handleIncoming(int samplesCollected) {
+void handleIncoming(int &samplesCollected) {
   uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
   uint8_t len = sizeof(buf);
   uint8_t from;
 
-
-  // short timeout keeps loop responsive
   if (manager.recvfromAckTimeout(buf, &len, 50, &from)) {
    
     if (len < 1) return;
 
-
     char type = (char)buf[0];
-
 
     if (type == 'D') {
       if (len >= 1 + sizeof(float)) {
         float depth;
         memcpy(&depth, &buf[1], sizeof(float));
 
-
-        // Optional: don’t spam too hard—print occasionally if you want
-        //OLED_clear();
-        Serial.print("Depth: ");
+        Serial.print(F("Depth: "));
         Serial.print(depth, 3);
-        Serial.print(" m (RSSI ");
+        Serial.print(F(" m (RSSI "));
         Serial.print(rf95.lastRssi());
-        Serial.println(" dBm)");
-
-        //OLED_ShowString(4, 0, "Depth:");
-        //OLED_ShowFloat(4, 60, depth);
-
+        Serial.println(F(" dBm)"));
 
         if (depth < 50)
         {
-        Serial.println("Go Up");
-        OLED_ShowString(3, 40, "Go  Up ");
+          Serial.println(F("Go Up"));
+          OLED_ShowString(3, 40, " Go  Up ");
         }
-        else if (depth > 150)
+        else if (depth > 180)
         {
-        Serial.println("Go Down");
-        OLED_ShowString(3,40, "Go Down");
+          Serial.println(F("Go Down"));
+          OLED_ShowString(3,40, " Go Down");
         }
         else
         {
-        Serial.println("Ready to Collect");
-        OLED_ShowString(3, 40, " Ready ");
+          Serial.println(F("Ready to Collect"));
+          OLED_ShowString(3, 40, "  Ready ");
         }
       }
     }
-    else if (type == 'K') { // DONE
-      if (waitingForDone) {
-        uint32_t counter = 0;
-        if (len >= 1 + sizeof(uint32_t)) {
-          memcpy(&counter, &buf[1], sizeof(uint32_t));
-        }
 
+    else if (type == 'K') {
+      uint32_t counter = 0;
+      uint16_t receivedSamples = 0;
 
-        Serial.print("success");
-        Serial.print(" (actionCounter=");
-        Serial.print(counter);
-        Serial.println(")");
+      if (len >= 1 + sizeof(uint32_t) + sizeof(uint16_t)) {
+        memcpy(&counter, &buf[1], sizeof(uint32_t));
+        memcpy(&receivedSamples, &buf[1 + sizeof(uint32_t)], sizeof(uint16_t));
+
+        samplesCollected = (int)receivedSamples;
+
+        Serial.print(F("New Sample Count: "));
+        Serial.println(samplesCollected);
+
         waitingForDone = false;
-        samplesCollected++;
-        //OLED_ShowString(0, 0, "Samples:");
-        //OLED_ShowFloat(0, 70, (float)counter);
       } else {
-        // DONE arrived unexpectedly (could happen if you reboot mid-protocol)
-        Serial.println("Got DONE but wasn’t waiting.");
+        Serial.println(F("K packet received but length was wrong"));
       }
     }
-    else if (type == 'E') { 
-    if (waitingForDone) { Serial.println("************************************");
-    Serial.println("TRIGGER REJECTED: Depth is out of bounds!");   Serial.println("************************************"); 
-    OLED_ShowString(5, 0, "     Triggered Failed       ");
 
-    waitingForDone = false; // Frees the controller instantly! 
- } 
- }  
+    else if (type == 'E') { 
+      if (waitingForDone) {
+        Serial.println(F("************************************"));
+        Serial.println(F("TRIGGER REJECTED: Depth is out of bounds!"));
+        Serial.println(F("************************************")); 
+        OLED_ShowString(5, 0, "     Triggered Failed       ");
+
+        waitingForDone = false;
+      } 
+    }  
   }
 }
-
 
 void loop() {
-  // 1) Read operator input on SECONDARY
- int reading = digitalRead(START_BUTTON);
+  bool reading = digitalRead(startButton);
 
-if (reading != lastButtonState) {
-  lastDebounceTime = millis();
-}
-
-if ((millis() - lastDebounceTime) > debounceDelay) {
-  if (reading == LOW && !buttonPressed && !waitingForDone) {
-    buttonPressed = true;
-    sendTrigger();
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 200) {
+    Serial.print(F("Button reading: "));
+    Serial.print(reading);
+    Serial.print(F(" | stable: "));
+    Serial.print(stableButtonState);
+    Serial.print(F(" | waitingForDone: "));
+    Serial.println(waitingForDone);
+    lastPrint = millis();
   }
 
-  if (reading == HIGH) {
-    buttonPressed = false;
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
   }
-}
 
-lastButtonState = reading;
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != stableButtonState) {
+      stableButtonState = reading;
 
+      if (stableButtonState == LOW && !waitingForDone) {
+        Serial.println(F("Button press detected -> sending trigger"));
+        sendTrigger();
+      }
+    }
+  }
 
-  // 2) Process incoming depth + DONE
+  lastButtonState = reading;
+
   handleIncoming(samplesCollected);
-  OLED_ShowString(0, 0, "Samples Collected:");
-  OLED_ShowNum(0, 110, samplesCollected);
 
-  // 3) Timeout if DONE never arrives
+  static int lastDisplayed = -1;
+  if (samplesCollected != lastDisplayed) {
+    OLED_ShowString(0, 110, "                        ");
+    OLED_ShowString(0, 0, "Samples Collected:");
+    OLED_ShowNum(0, 110, samplesCollected);
+    lastDisplayed = samplesCollected;
+    if (samplesCollected >= 1){
+      OLED_ShowString(5, 9, "   reTriggerable     ");
+    }
+  }
+
   if (waitingForDone && (millis() - triggerSentAt > DONE_TIMEOUT_MS)) {
-    Serial.println("Timed out waiting for DONE.");
+    Serial.println(F("Timed out waiting for DONE."));
     waitingForDone = false;
   }
 }
