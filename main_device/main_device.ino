@@ -12,7 +12,7 @@ const int TIME_SPENT_BOTTOM = 20;   // seconds idle at bottom after lowering
 const unsigned long LOWER_TIME_MS = 20000;
 const unsigned long RAISE_TIME_MS = 20000;
 
-const int MOTOR_MIN_SPEED = 100;           // PWM 0–255: starting/ending speed
+const int MOTOR_MIN_SPEED = 120;           // PWM 0–255: starting/ending speed
 const int MOTOR_MAX_SPEED_DOWN = 190;     // lowering max PWM
 const int MOTOR_MAX_SPEED_UP   = 210;     // raising max PWM
 
