@@ -312,20 +312,20 @@ void setup() {
   OLED_clear();
   
   Serial.println(F("SECONDARY ready. Push Button for Triggering."));
-  OLED_ShowString(5, 8, "Push Button to Start");
+  OLED_ShowString(5, 8, "    Push to Start");
 }
 
 void sendTrigger() {
   uint8_t trig[1] = {'T'};
 
   Serial.println(F("Sending trigger..."));
-  OLED_ShowString(5, 9, "    Triggering    ");
+  OLED_ShowString(5, 9, "     Triggering     ");
 
   bool ok = manager.sendtoWait(trig, sizeof(trig), MAIN_ADDR);
 
   if (ok) {
     Serial.println(F("Trigger delivered, waiting for DONE..."));
-    OLED_ShowString(5, 9, "      Triggered         ");
+    OLED_ShowString(5, 9, "     Triggered        ");
     waitingForDone = true;
     triggerSentAt = millis();
   } else {
@@ -362,17 +362,17 @@ void handleIncoming(int &samplesCollected) {
         if (depth < 50)
         {
           Serial.println(F("Go Up"));
-          OLED_ShowString(3, 40, "Go  Up ");
+          OLED_ShowString(3, 40, " Go  Up ");
         }
         else if (depth > 180)
         {
           Serial.println(F("Go Down"));
-          OLED_ShowString(3,40, "Go Down");
+          OLED_ShowString(3,40, " Go Down");
         }
         else
         {
           Serial.println(F("Ready to Collect"));
-          OLED_ShowString(3, 40, " Ready ");
+          OLED_ShowString(3, 40, "  Ready ");
         }
       }
     }
@@ -448,7 +448,9 @@ void loop() {
     OLED_ShowString(0, 0, "Samples Collected:");
     OLED_ShowNum(0, 110, samplesCollected);
     lastDisplayed = samplesCollected;
-    OLED_ShowString(5, 9, "Ready for reTriggering");
+    if (samplesCollected >= 1){
+      OLED_ShowString(5, 9, "   reTriggerable     ");
+    }
   }
 
   if (waitingForDone && (millis() - triggerSentAt > DONE_TIMEOUT_MS)) {
